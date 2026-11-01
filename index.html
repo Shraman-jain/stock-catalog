@@ -190,20 +190,25 @@ function makePdf(){
   const M=10,PW=210,PH=297,gap=4,per=cols*rws;
   // group by section, each section starts on a new page
   const groups=[];for(const p of items){const g=groups[groups.length-1];if(g&&g.sec===p.sec)g.list.push(p);else groups.push({sec:p.sec,list:[p]})}
+  items.forEach((p,i)=>p.no=i+1);
+  const dn=new Date(),dateStr=String(dn.getDate()).padStart(2,'0')+'-'+String(dn.getMonth()+1).padStart(2,'0')+'-'+dn.getFullYear();
   let first=true;
   for(const g of groups){
     for(let st=0;st<g.list.length;st+=per){
-      if(!first)pdf.addPage();first=false;
-      const bh=g.sec?14:0,top=M+bh,cw=(PW-2*M-(cols-1)*gap)/cols,ch=(PH-top-M-6-(rws-1)*gap)/rws;
-      if(g.sec){pdf.setFillColor(31,111,80);pdf.rect(M,M,PW-2*M,11,'F');pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(15);pdf.text(g.sec,PW/2,M+7.6,{align:'center'})}
+      const isFirst=first;if(!first)pdf.addPage();first=false;
+      const hb=isFirst?24:0,bh=g.sec?14:0,top=M+hb+bh,cw=(PW-2*M-(cols-1)*gap)/cols,ch=(PH-top-M-6-(rws-1)*gap)/rws;
+      if(isFirst){pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(22);pdf.text('ABHISHEK SHADI CARD',PW/2,M+9,{align:'center'});pdf.setFont('helvetica','normal');pdf.setFontSize(12);pdf.setTextColor(90);pdf.text('Date: '+dateStr,PW/2,M+17,{align:'center'})}
+      if(g.sec){pdf.setFillColor(31,111,80);pdf.rect(M,M+hb,PW-2*M,11,'F');pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(15);pdf.text(g.sec,PW/2,M+hb+7.6,{align:'center'})}
       g.list.slice(st,st+per).forEach((p,i)=>{
-        const cx=M+(i%cols)*(cw+gap),cy=top+Math.floor(i/cols)*(ch+gap),lab=Math.min(16,ch*.25);
+        const cx=M+(i%cols)*(cw+gap),cy=top+Math.floor(i/cols)*(ch+gap),lab=Math.min(22,ch*.3),serH=7;
         pdf.setDrawColor(200);pdf.setLineWidth(.2);pdf.rect(cx,cy,cw,ch);
-        if(p.img){const bw=cw-4,bh2=ch-lab-4,sc=Math.min(bw/p.img.w,bh2/p.img.h),iw=p.img.w*sc,ih=p.img.h*sc;
-          pdf.addImage(p.img.url,'JPEG',cx+(cw-iw)/2,cy+2+(bh2-ih)/2,iw,ih)}
-        const s=status(p.qty);pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(12,cw/6));
-        pdf.text(String(p.model),cx+cw/2,cy+ch-lab*.52,{align:'center'});
-        pdf.setFont('helvetica','normal');pdf.setFontSize(Math.min(10,cw/7.5));
+        pdf.setTextColor(90);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(11,cw/5));
+        pdf.text('No. '+p.no,cx+cw/2,cy+5,{align:'center'});
+        if(p.img){const bw=cw-4,bh2=ch-lab-serH-3,sc=Math.min(bw/p.img.w,bh2/p.img.h),iw=p.img.w*sc,ih=p.img.h*sc;
+          pdf.addImage(p.img.url,'JPEG',cx+(cw-iw)/2,cy+serH+(bh2-ih)/2,iw,ih)}
+        const s=status(p.qty);pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(19,cw/3.4));
+        pdf.text(String(p.model),cx+cw/2,cy+ch-lab*.5,{align:'center'});
+        pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(15,cw/4.6));
         if(s.low)pdf.setTextColor(180,83,26);else pdf.setTextColor(31,111,80);
         pdf.text(s.t,cx+cw/2,cy+ch-lab*.14,{align:'center'});
       });

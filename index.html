@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stock Catalog PDF Maker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📒%3C/text%3E%3C/svg%3E">
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#dcdad2;--acc:#1f6f50;--accink:#fff;--warn:#b4531a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171716;--card:#222220;--ink:#efede6;--mute:#a09e95;--line:#3a3935;--acc:#4fb98c;--accink:#10231a;--warn:#e89a62}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 18px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.step{font-weight:600;margin-bottom:8px}
+#drop{border:2px dashed var(--line);border-radius:12px;padding:28px 12px;text-align:center;cursor:pointer;color:var(--mute)}
+#drop.over{border-color:var(--acc);color:var(--ink)}
+.row{display:flex;flex-wrap:wrap;gap:14px;align-items:end}
+label{display:flex;flex-direction:column;font-size:13px;color:var(--mute);gap:4px}
+input[type=number]{width:110px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:16px}
+button{background:var(--acc);color:var(--accink);border:0;border-radius:10px;padding:11px 20px;font-size:16px;font-weight:600;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:10px;display:none}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
+#msg{margin-top:8px;color:var(--mute);min-height:1.4em}
+#msg.err{color:var(--warn)}
+.sec{grid-column:1/-1;background:var(--acc);color:var(--accink);padding:6px 12px;border-radius:8px;font-weight:700;letter-spacing:.04em;margin-top:6px}
+#grid{display:grid;gap:10px}
+.c{border:1px solid var(--line);border-radius:8px;padding:6px;text-align:center;background:var(--card)}
+.c img{width:100%;height:120px;object-fit:contain}
+.c b{display:block}
+.c span{font-size:13px;color:var(--mute)}
+.c span.low{color:var(--warn);font-weight:600}
+.hide{display:none}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<h1>Stock Catalog PDF Maker</h1>
+<p class="sub">Drop in your stock Excel file and get a customer-ready PDF. Everything happens on this computer; your file is never uploaded anywhere.</p>
+
+<div class="panel">
+  <div class="step">1. Choose your Excel file</div>
+  <div id="drop">Click here or drag the .xlsx file onto this box</div>
+  <input id="file" type="file" accept=".xlsx" class="hide">
+  <div class="bar" id="bar"><i id="fill"></i></div>
+  <div id="msg"></div>
+</div>
+
+<div class="panel">
+  <div class="step">2. Settings</div>
+  <div class="row">
+    <label>Show “Available” when quantity is at least<input id="thr" type="number" min="1" value="1000"></label>
+    <label>Columns per page<input id="cols" type="number" min="1" max="6" value="3"></label>
+    <label>Rows per page<input id="rows" type="number" min="1" max="8" value="4"></label>
+    <button id="go" disabled>Download PDF</button>
+  </div>
+  <p class="sub" style="margin:10px 0 0">Below that number the PDF shows the exact quantity. A quantity of 0 shows “Out of stock”. Products with a blank quantity are left out.</p>
+</div>
+
+<div class="panel hide" id="pv">
+  <div class="step">Preview (check that each photo matches its model number)</div>
+  <div id="grid"></div>
+</div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const RNS='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+let items=[];
+
+function msg(t,err){const m=$('msg');m.textContent=t;m.className=err?'err':''}
+function prog(p){$('bar').style.display='block';$('fill').style.width=Math.round(p*100)+'%'}
+const dom=s=>new DOMParser().parseFromString(s,'application/xml');
+function join(dir,t){if(t.startsWith('/'))return t.slice(1);const p=(dir+t).split('/'),o=[];for(const s of p){if(s==='..')o.pop();else if(s!=='.')o.push(s)}return o.join('/')}
+function status(q){const T=Math.max(1,+$('thr').value||1000);return q>=T?{t:'Available',low:false}:q<=0?{t:'Out of stock',low:true}:{t:'Qty: '+q,low:true}}
+
+async function loadFile(file){
+  items=[];$('go').disabled=true;$('pv').classList.add('hide');
+  try{
+    msg('Opening file… large files take a minute, please wait.');prog(.02);
+    const zip=await JSZip.loadAsync(file);
+    const txt=p=>zip.file(p).async('string');
+    const rels=async p=>{const i=p.lastIndexOf('/'),d=p.slice(0,i+1),f=zip.file(d+'_rels/'+p.slice(i+1)+'.rels'),m={};
+      if(f)for(const r of dom(await f.async('string')).getElementsByTagName('Relationship'))m[r.getAttribute('Id')]=join(d,r.getAttribute('Target'));return m};
+    const wbRels=await rels('xl/workbook.xml');
+    const sh=dom(await txt('xl/workbook.xml')).getElementsByTagName('sheet')[0];
+    const sheetPath=wbRels[sh.getAttributeNS(RNS,'id')];
+    let ss=[];
+    if(zip.file('xl/sharedStrings.xml'))ss=[...dom(await txt('xl/sharedStrings.xml')).getElementsByTagName('si')].map(si=>[...si.getElementsByTagName('t')].map(t=>t.textContent).join(''));
+    const sd=dom(await txt(sheetPath));
+    const rows=[];
+    for(const r of sd.getElementsByTagName('row')){
+      const o={n:+r.getAttribute('r')};
+      for(const c of r.getElementsByTagName('c')){
+        const col=c.getAttribute('r').replace(/\d/g,''),v=c.getElementsByTagName('v')[0],t=c.getAttribute('t');
+        let val=null;
+        if(t==='s'&&v)val=ss[+v.textContent];
+        else if(t==='inlineStr')val=[...c.getElementsByTagName('t')].map(x=>x.textContent).join('');
+        else if(v)val=v.textContent;
+        if(val!==null&&String(val).trim()!=='')o[col]=String(val).trim();
+      }
+      rows.push(o);
+    }
+    // products and section headings, in sheet order
+    let sec='';const prods=[];
+    for(const r of rows){
+      if(r.n===1)continue;
+      if(!r.A&&r.B&&!r.C){sec=r.B;continue}
+      if(!r.A)continue;
+      prods.push({sec,model:r.A,qty:r.C===undefined?null:parseFloat(r.C),img:null});
+    }
+    // photos: old-style embedded objects, matched to rows by position on the sheet
+    const sRels=await rels(sheetPath);
+    const ld=sd.getElementsByTagName('legacyDrawing')[0];
+    if(!ld)throw new Error('No photos found in the first sheet.');
+    const vmlPath=sRels[ld.getAttributeNS(RNS,'id')];
+    const vmlRels=await rels(vmlPath);
+    const vml=await txt(vmlPath);
+    const shapes=[];
+    for(const part of vml.split('<v:shape ').slice(1)){
+      const rid=(part.match(/o:relid="([^"]+)"/)||[])[1],an=(part.match(/<x:Anchor>\s*([^<]*)/)||[])[1];
+      if(!rid||!an)continue;
+      const a=an.split(',').map(Number);
+      shapes.push({path:vmlRels[rid],key:a[2]*100000+a[3]});
+    }
+    shapes.sort((a,b)=>a.key-b.key);
+    if(shapes.length!==prods.length)msg('Warning: found '+shapes.length+' photos for '+prods.length+' products. Please check the preview carefully.',true);
+    for(let i=0;i<prods.length;i++){
+      if(i<shapes.length&&shapes[i].path){
+        const buf=await zip.file(shapes[i].path).async('uint8array');
+        prods[i].img=emfToJpg(buf,420);
+      }
+      if(i%5===0){prog(.1+.88*i/prods.length);await new Promise(r=>setTimeout(r))}
+    }
+    items=prods.filter(p=>p.qty!==null&&!isNaN(p.qty));
+    const skipped=prods.length-items.length;
+    prog(1);
+    if(!items.length)throw new Error('No products with a quantity were found.');
+    if(shapes.length===prods.length)msg('Done: '+items.length+' products ready'+(skipped?' ('+skipped+' left out for blank quantity)':'')+'.');
+    $('go').disabled=false;renderPreview();
+  }catch(e){console.error(e);msg('Sorry, this file could not be read: '+e.message,true)}
+}
+
+// pull the raw bitmap out of an EMF picture and shrink it to a small JPEG
+function emfToJpg(u8,max){
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);let o=0,best=null;
+  while(o+8<=u8.length){const t=dv.getUint32(o,true),s=dv.getUint32(o+4,true);if(!s)break;
+    if(t===81&&(!best||s>best.s))best={o,s};o+=s}
+  if(!best)return null;
+  const R=best.o,ob=R+dv.getUint32(R+48,true),bits=R+dv.getUint32(R+56,true);
+  const w=dv.getInt32(ob+4,true),h=dv.getInt32(ob+8,true),bpp=dv.getUint16(ob+14,true),H=Math.abs(h);
+  if(bpp!==24&&bpp!==32)return null;
+  const stride=((w*bpp+31)>>5)*4,B=bpp/8;
+  const c=document.createElement('canvas');c.width=w;c.height=H;const x=c.getContext('2d');
+  const id=x.createImageData(w,H),d=id.data;
+  for(let y=0;y<H;y++){let s=bits+(h>0?H-1-y:y)*stride,k=y*w*4;
+    for(let i=0;i<w;i++,s+=B,k+=4){d[k]=u8[s+2];d[k+1]=u8[s+1];d[k+2]=u8[s];d[k+3]=255}}
+  x.putImageData(id,0,0);
+  const sc=Math.min(1,max/Math.max(w,H)),c2=document.createElement('canvas');
+  c2.width=Math.round(w*sc);c2.height=Math.round(H*sc);
+  const x2=c2.getContext('2d');x2.fillStyle='#fff';x2.fillRect(0,0,c2.width,c2.height);
+  x2.imageSmoothingQuality='high';x2.drawImage(c,0,0,c2.width,c2.height);
+  return {url:c2.toDataURL('image/jpeg',.72),w:c2.width,h:c2.height};
+}
+
+function renderPreview(){
+  const g=$('grid');g.innerHTML='';
+  g.style.gridTemplateColumns='repeat(auto-fill,minmax(130px,1fr))';
+  let last=null;
+  for(const p of items){
+    if(p.sec!==last){last=p.sec;if(p.sec){const d=document.createElement('div');d.className='sec';d.textContent=p.sec;g.appendChild(d)}}
+    const s=status(p.qty),d=document.createElement('div');d.className='c';
+    d.innerHTML=(p.img?'<img alt="">':'<div style="height:120px"></div>')+'<b></b><span class="'+(s.low?'low':'')+'"></span>';
+    if(p.img)d.querySelector('img').src=p.img.url;
+    d.querySelector('b').textContent=p.model;d.querySelector('span').textContent=s.t;
+    g.appendChild(d);
+  }
+  $('pv').classList.remove('hide');
+}
+
+function makePdf(){
+  const cols=Math.min(6,Math.max(1,+$('cols').value||3)),rws=Math.min(8,Math.max(1,+$('rows').value||4));
+  const {jsPDF}=window.jspdf,pdf=new jsPDF({unit:'mm',format:'a4'});
+  const M=10,PW=210,PH=297,gap=4,per=cols*rws;
+  // group by section, each section starts on a new page
+  const groups=[];for(const p of items){const g=groups[groups.length-1];if(g&&g.sec===p.sec)g.list.push(p);else groups.push({sec:p.sec,list:[p]})}
+  let first=true;
+  for(const g of groups){
+    for(let st=0;st<g.list.length;st+=per){
+      if(!first)pdf.addPage();first=false;
+      const bh=g.sec?14:0,top=M+bh,cw=(PW-2*M-(cols-1)*gap)/cols,ch=(PH-top-M-6-(rws-1)*gap)/rws;
+      if(g.sec){pdf.setFillColor(31,111,80);pdf.rect(M,M,PW-2*M,11,'F');pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(15);pdf.text(g.sec,PW/2,M+7.6,{align:'center'})}
+      g.list.slice(st,st+per).forEach((p,i)=>{
+        const cx=M+(i%cols)*(cw+gap),cy=top+Math.floor(i/cols)*(ch+gap),lab=Math.min(16,ch*.25);
+        pdf.setDrawColor(200);pdf.setLineWidth(.2);pdf.rect(cx,cy,cw,ch);
+        if(p.img){const bw=cw-4,bh2=ch-lab-4,sc=Math.min(bw/p.img.w,bh2/p.img.h),iw=p.img.w*sc,ih=p.img.h*sc;
+          pdf.addImage(p.img.url,'JPEG',cx+(cw-iw)/2,cy+2+(bh2-ih)/2,iw,ih)}
+        const s=status(p.qty);pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(12,cw/6));
+        pdf.text(String(p.model),cx+cw/2,cy+ch-lab*.52,{align:'center'});
+        pdf.setFont('helvetica','normal');pdf.setFontSize(Math.min(10,cw/7.5));
+        if(s.low)pdf.setTextColor(180,83,26);else pdf.setTextColor(31,111,80);
+        pdf.text(s.t,cx+cw/2,cy+ch-lab*.14,{align:'center'});
+      });
+      pdf.setTextColor(120);pdf.setFont('helvetica','normal');pdf.setFontSize(8);
+      pdf.text('Page '+pdf.getNumberOfPages(),PW/2,PH-6,{align:'center'});
+    }
+  }
+  const d=new Date(),n='stock_'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'.pdf';
+  pdf.save(n);msg('PDF saved as '+n+' ('+pdf.getNumberOfPages()+' pages).');
+}
+
+const drop=$('drop'),inp=$('file');
+drop.onclick=()=>inp.click();
+inp.onchange=()=>inp.files[0]&&loadFile(inp.files[0]);
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};
+drop.ondragleave=()=>drop.classList.remove('over');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');e.dataTransfer.files[0]&&loadFile(e.dataTransfer.files[0])};
+$('thr').oninput=()=>items.length&&renderPreview();
+$('go').onclick=()=>{try{msg('Building PDF…');setTimeout(makePdf,30)}catch(e){msg('PDF failed: '+e.message,true)}};
+</script>
+</body>
+</html>

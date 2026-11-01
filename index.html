@@ -200,17 +200,15 @@ function makePdf(){
       if(isFirst){pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(22);pdf.text('ABHISHEK SHADI CARD',PW/2,M+9,{align:'center'});pdf.setFont('helvetica','normal');pdf.setFontSize(12);pdf.setTextColor(90);pdf.text('Date: '+dateStr,PW/2,M+17,{align:'center'})}
       if(g.sec){pdf.setFillColor(31,111,80);pdf.rect(M,M+hb,PW-2*M,11,'F');pdf.setTextColor(255);pdf.setFont('helvetica','bold');pdf.setFontSize(15);pdf.text(g.sec,PW/2,M+hb+7.6,{align:'center'})}
       g.list.slice(st,st+per).forEach((p,i)=>{
-        const cx=M+(i%cols)*(cw+gap),cy=top+Math.floor(i/cols)*(ch+gap),lab=Math.min(22,ch*.3),serH=7;
+        const cx=M+(i%cols)*(cw+gap),cy=top+Math.floor(i/cols)*(ch+gap),lab=Math.min(14,ch*.2),serH=11;
         pdf.setDrawColor(200);pdf.setLineWidth(.2);pdf.rect(cx,cy,cw,ch);
-        pdf.setTextColor(90);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(11,cw/5));
-        pdf.text('No. '+p.no,cx+cw/2,cy+5,{align:'center'});
+        pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(17,cw/3.8));
+        pdf.text('Design No. '+p.model,cx+cw/2,cy+7.5,{align:'center'});
         if(p.img){const bw=cw-4,bh2=ch-lab-serH-3,sc=Math.min(bw/p.img.w,bh2/p.img.h),iw=p.img.w*sc,ih=p.img.h*sc;
           pdf.addImage(p.img.url,'JPEG',cx+(cw-iw)/2,cy+serH+(bh2-ih)/2,iw,ih)}
-        const s=status(p.qty);pdf.setTextColor(0);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(19,cw/3.4));
-        pdf.text(String(p.model),cx+cw/2,cy+ch-lab*.5,{align:'center'});
-        pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(15,cw/4.6));
+        const s=status(p.qty);pdf.setFont('helvetica','bold');pdf.setFontSize(Math.min(20,cw/3.2));
         if(s.low)pdf.setTextColor(180,83,26);else pdf.setTextColor(31,111,80);
-        pdf.text(s.t,cx+cw/2,cy+ch-lab*.14,{align:'center'});
+        pdf.text(s.t,cx+cw/2,cy+ch-lab*.3,{align:'center'});
       });
       pdf.setTextColor(120);pdf.setFont('helvetica','normal');pdf.setFontSize(8);
       pdf.text('Page '+pdf.getNumberOfPages(),PW/2,PH-6,{align:'center'});
